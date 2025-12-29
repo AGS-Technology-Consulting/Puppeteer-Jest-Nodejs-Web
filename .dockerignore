@@ -1,0 +1,63 @@
+# Dependencies
+node_modules
+npm-debug.log
+yarn-error.log
+package-lock.json
+yarn.lock
+
+# Test Results
+test-results
+allure-results
+allure-report
+allure-reports
+coverage
+.nyc_output
+
+# Screenshots
+screenshots/*.png
+
+# Logs
+logs
+*.log
+
+# Environment
+.env
+.env.*
+
+# Git
+.git
+.gitignore
+.gitattributes
+
+# IDE
+.vscode
+.idea
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Documentation
+README.md
+CONTRIBUTING.md
+CHANGELOG.md
+LICENSE
+*.md
+
+# CI/CD
+.github
+Jenkinsfile
+.travis.yml
+.gitlab-ci.yml
+
+# Docker
+Dockerfile
+docker-compose.yml
+.dockerignore
+
+# Misc
+tmp
+temp
+.cache

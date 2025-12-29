@@ -1,0 +1,62 @@
+version: '3.8'
+
+services:
+  # Test execution service
+  tests:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: puppeteer-tests
+    environment:
+      - BASE_URL=https://the-internet.herokuapp.com
+      - HEADLESS=true
+      - NODE_ENV=test
+      - LOG_LEVEL=info
+    volumes:
+      # Mount results for persistence
+      - ./screenshots:/app/screenshots
+      - ./allure-results:/app/allure-results
+      - ./test-results:/app/test-results
+      - ./logs:/app/logs
+    networks:
+      - test-network
+    command: npm test
+
+  # Allure report server
+  allure:
+    image: frankescobar/allure-docker-service:latest
+    container_name: allure-report
+    environment:
+      - CHECK_RESULTS_EVERY_SECONDS=3
+      - KEEP_HISTORY=1
+    ports:
+      - "5050:5050"
+    volumes:
+      - ./allure-results:/app/allure-results
+      - ./allure-reports:/app/default-reports
+    networks:
+      - test-network
+    depends_on:
+      - tests
+
+  # Allure UI (optional)
+  allure-ui:
+    image: frankescobar/allure-docker-service-ui:latest
+    container_name: allure-ui
+    environment:
+      - ALLURE_DOCKER_PUBLIC_API_URL=http://allure:5050
+      - ALLURE_DOCKER_PUBLIC_API_URL_PREFIX=
+    ports:
+      - "5252:5252"
+    networks:
+      - test-network
+    depends_on:
+      - allure
+
+networks:
+  test-network:
+    driver: bridge
+
+volumes:
+  allure-results:
+  allure-reports:
