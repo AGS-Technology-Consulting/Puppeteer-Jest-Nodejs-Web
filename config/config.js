@@ -1,6 +1,7 @@
 /**
  * Framework Configuration
  * Central configuration for the Puppeteer automation framework
+ * Updated with API Integration for Jenkins
  */
 
 require('dotenv').config();
@@ -55,13 +56,13 @@ module.exports = {
     }
   },
 
-  // API Configuration (for Jenkins integration)
+  // API Configuration (for Jenkins integration - Direct values, no credentials needed)
   api: {
     enabled: process.env.JENKINS_URL !== undefined || process.env.BUILD_NUMBER !== undefined,
-    baseURL: process.env.API_BASE_URL || 'https://your-api-endpoint.com',
-    token: process.env.API_TOKEN || '',
-    orgId: process.env.ORG_ID || '',
-    createdBy: process.env.CREATED_BY || '',
+    baseURL: process.env.API_BASE_URL || 'https://unsobering-maribeth-hokey.ngrok-free.dev',
+    token: process.env.API_TOKEN || 'D_YIqZ4D0tYVgFTWKEaRVImEpiq3vzZkOB40lKDDSRk',
+    orgId: process.env.ORG_ID || '374060a8-925c-49aa-8495-8a823949f3e0',
+    createdBy: process.env.CREATED_BY || 'c9279b2d-701c-48eb-9122-fbeae465771c',
     timeout: 10000
   },
 
@@ -69,7 +70,7 @@ module.exports = {
   jenkins: {
     buildNumber: process.env.BUILD_NUMBER || '',
     buildUrl: process.env.BUILD_URL || '',
-    jobName: process.env.JOB_NAME || 'puppeteer-pom-framework',
+    jobName: process.env.JOB_NAME || 'Puppeteer-Jest-Framework',
     gitBranch: process.env.GIT_BRANCH || process.env.BRANCH_NAME || 'main',
     gitCommit: process.env.GIT_COMMIT || '',
     triggeredBy: process.env.BUILD_USER || process.env.BUILD_USER_ID || 'jenkins',

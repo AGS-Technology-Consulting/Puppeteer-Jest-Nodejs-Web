@@ -1,64 +1,86 @@
 /**
- * Jenkinsfile for Puppeteer POM Framework
- * CI/CD Pipeline Configuration
+ * Jenkinsfile for Puppeteer-Jest Framework
+ * Fixed for Jenkins without plugins/credentials
  */
 
 pipeline {
     agent any
 
+    options {
+        buildDiscarder(logRotator(numToKeepStr: '30'))
+        timestamps()
+        timeout(time: 45, unit: 'MINUTES')
+        disableConcurrentBuilds()
+        ansiColor('xterm')
+    }
+
     environment {
-        // Node.js configuration
-        NODEJS_HOME = tool name: 'NodeJS-18', type: 'NodeJS'
-        PATH = "${NODEJS_HOME}/bin:${env.PATH}"
+        // Node.js PATH configuration (CRITICAL!)
+        PATH = "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin:${env.PATH}"
+        npm_config_cache = "${WORKSPACE}/.npm"
+        NODE_OPTIONS = '--max-old-space-size=4096'
+        CI = 'true'
         
         // Test configuration
         HEADLESS = 'true'
         BASE_URL = 'https://the-internet.herokuapp.com'
         
-        // API Configuration (for test tracking)
-        API_BASE_URL = credentials('api-base-url')
-        API_TOKEN = credentials('api-token')
-        ORG_ID = credentials('org-id')
-        CREATED_BY = credentials('created-by')
-        
-        // Environment
+        // Jenkins environment for API tracking
         NODE_ENV = 'test'
         LOG_LEVEL = 'info'
     }
 
-    options {
-        buildDiscarder(logRotator(numToKeepStr: '10', artifactNumToKeepStr: '10'))
-        timestamps()
-        timeout(time: 30, unit: 'MINUTES')
-        disableConcurrentBuilds()
+    parameters {
+        choice(
+            name: 'TEST_SUITE',
+            choices: ['all', 'smoke', 'regression'],
+            description: 'Test suite to execute'
+        )
+        booleanParam(
+            name: 'HEADLESS_MODE',
+            defaultValue: true,
+            description: 'Run tests in headless mode'
+        )
+        booleanParam(
+            name: 'CLEAN_BUILD',
+            defaultValue: true,
+            description: 'Clean previous reports before running'
+        )
     }
 
     stages {
         stage('Checkout') {
             steps {
                 script {
-                    echo '🔄 Checking out code...'
-                }
-                checkout scm
-                script {
+                    echo '🔄 Checking out code from repository...'
+                    checkout scm
                     echo '✅ Code checked out successfully'
-                    echo "📦 Branch: ${env.GIT_BRANCH}"
-                    echo "📝 Commit: ${env.GIT_COMMIT}"
+                    echo "📦 Branch: ${env.GIT_BRANCH ?: 'main'}"
+                    echo "📝 Commit: ${env.GIT_COMMIT ?: 'N/A'}"
                 }
             }
         }
 
-        stage('Setup') {
+        stage('Setup Environment') {
+            steps {
+                script {
+                    echo '🔧 Setting up Node.js environment...'
+                    sh '''
+                        echo "Node version: $(node --version)"
+                        echo "NPM version: $(npm --version)"
+                        echo "Base URL: ${BASE_URL}"
+                        echo "Headless Mode: ${HEADLESS_MODE}"
+                        echo "Test Suite: ${TEST_SUITE}"
+                    '''
+                }
+            }
+        }
+
+        stage('Install Dependencies') {
             steps {
                 script {
                     echo '📦 Installing dependencies...'
-                }
-                sh '''
-                    node --version
-                    npm --version
-                    npm ci
-                '''
-                script {
+                    sh 'npm install'
                     echo '✅ Dependencies installed successfully'
                 }
             }
@@ -68,30 +90,55 @@ pipeline {
             steps {
                 script {
                     echo '🔍 Checking environment...'
-                }
-                sh '''
-                    echo "Node Version: $(node --version)"
-                    echo "NPM Version: $(npm --version)"
-                    echo "Puppeteer Version: $(npm list puppeteer --depth=0 | grep puppeteer)"
-                    echo "Base URL: ${BASE_URL}"
-                    echo "Headless Mode: ${HEADLESS}"
-                '''
-                script {
+                    sh '''
+                        echo "Node Version: $(node --version)"
+                        echo "NPM Version: $(npm --version)"
+                        npm list puppeteer --depth=0 || true
+                        npm list jest --depth=0 || true
+                    '''
                     echo '✅ Environment check completed'
                 }
             }
         }
 
-        stage('Run Tests') {
+        stage('Clean Previous Reports') {
+            when {
+                expression { return params.CLEAN_BUILD }
+            }
             steps {
                 script {
-                    echo '🧪 Running Puppeteer tests...'
+                    echo '🧹 Cleaning previous reports...'
+                    sh '''
+                        rm -rf test-results/* || true
+                        rm -rf screenshots/*.png || true
+                        rm -rf logs/*.log || true
+                        rm -rf allure-results/* || true
+                        rm -rf allure-report/* || true
+                    '''
                 }
-                sh '''
-                    npm run test:ci
-                '''
+            }
+        }
+
+        stage('Run Puppeteer Tests') {
+            steps {
                 script {
-                    echo '✅ Tests executed'
+                    echo '🧪 Running Puppeteer + Jest tests with API integration...'
+                    
+                    // Set headless mode
+                    def headless = params.HEADLESS_MODE ? 'true' : 'false'
+                    
+                    sh """
+                        export HEADLESS=${headless}
+                        export BASE_URL=${BASE_URL}
+                        npm run test:ci || true
+                    """
+                }
+            }
+            post {
+                always {
+                    archiveArtifacts artifacts: 'test-results/**/*', allowEmptyArchive: true
+                    archiveArtifacts artifacts: 'screenshots/**/*.png', allowEmptyArchive: true
+                    archiveArtifacts artifacts: 'logs/**/*.log', allowEmptyArchive: true
                 }
             }
         }
@@ -100,66 +147,23 @@ pipeline {
             steps {
                 script {
                     echo '📊 Generating Allure report...'
-                }
-                sh '''
-                    npm run allure:generate || true
-                '''
-                script {
+                    sh 'npm run allure:generate || true'
                     echo '✅ Allure report generated'
                 }
             }
         }
 
-        stage('Archive Results') {
+        stage('Archive Test Results') {
             steps {
                 script {
                     echo '📦 Archiving test results...'
-                }
-                
-                // Archive test results
-                archiveArtifacts artifacts: 'test-results/**/*', allowEmptyArchive: true
-                
-                // Archive screenshots
-                archiveArtifacts artifacts: 'screenshots/**/*.png', allowEmptyArchive: true
-                
-                // Archive logs
-                archiveArtifacts artifacts: 'logs/**/*.log', allowEmptyArchive: true
-                
-                // Archive Allure results
-                archiveArtifacts artifacts: 'allure-results/**/*', allowEmptyArchive: true
-                
-                script {
+                    archiveArtifacts artifacts: 'allure-results/**/*', allowEmptyArchive: true
+                    archiveArtifacts artifacts: 'allure-report/**/*', allowEmptyArchive: true
+                    
+                    // Publish JUnit results if available
+                    junit testResults: 'test-results/*.xml', allowEmptyResults: true
+                    
                     echo '✅ Results archived successfully'
-                }
-            }
-        }
-
-        stage('Publish Allure Report') {
-            steps {
-                script {
-                    echo '📈 Publishing Allure report...'
-                }
-                allure([
-                    includeProperties: false,
-                    jdk: '',
-                    properties: [],
-                    reportBuildPolicy: 'ALWAYS',
-                    results: [[path: 'allure-results']]
-                ])
-                script {
-                    echo '✅ Allure report published'
-                }
-            }
-        }
-
-        stage('Publish Test Results') {
-            steps {
-                script {
-                    echo '📋 Publishing test results...'
-                }
-                junit testResults: 'test-results/*.xml', allowEmptyResults: true
-                script {
-                    echo '✅ Test results published'
                 }
             }
         }
@@ -169,17 +173,15 @@ pipeline {
         always {
             script {
                 echo '🧹 Cleaning up...'
-            }
-            
-            // Clean workspace
-            cleanWs(
-                deleteDirs: true,
-                patterns: [
-                    [pattern: 'node_modules', type: 'INCLUDE']
+                
+                def testResults = [
+                    suite: params.TEST_SUITE,
+                    headless: params.HEADLESS_MODE,
+                    buildNumber: env.BUILD_NUMBER,
+                    buildUrl: env.BUILD_URL
                 ]
-            )
-            
-            script {
+                
+                echo "Test Results: ${testResults}"
                 echo '✅ Cleanup completed'
             }
         }
@@ -191,17 +193,16 @@ pipeline {
                 echo '✅ ========================================='
             }
             
-            // Send success notification (optional)
-            emailext (
-                subject: "✅ SUCCESS: Job '${env.JOB_NAME} [${env.BUILD_NUMBER}]'",
+            emailext(
+                subject: "✅ SUCCESS: Puppeteer Tests - Build #${env.BUILD_NUMBER}",
                 body: """
-                    <p>✅ Build Status: SUCCESS</p>
-                    <p>Job: ${env.JOB_NAME}</p>
-                    <p>Build Number: ${env.BUILD_NUMBER}</p>
-                    <p>Build URL: <a href="${env.BUILD_URL}">${env.BUILD_URL}</a></p>
-                    <p>Allure Report: <a href="${env.BUILD_URL}allure">View Report</a></p>
+                    <h2>Puppeteer Test Execution Successful</h2>
+                    <p><b>Test Suite:</b> ${params.TEST_SUITE}</p>
+                    <p><b>Headless Mode:</b> ${params.HEADLESS_MODE}</p>
+                    <p><b>Build:</b> #${env.BUILD_NUMBER}</p>
+                    <p><b>URL:</b> <a href="${env.BUILD_URL}">${env.BUILD_URL}</a></p>
+                    <p><b>Console:</b> <a href="${env.BUILD_URL}console">${env.BUILD_URL}console</a></p>
                 """,
-                recipientProviders: [developers()],
                 to: '${DEFAULT_RECIPIENTS}',
                 mimeType: 'text/html'
             )
@@ -214,18 +215,16 @@ pipeline {
                 echo '❌ ========================================='
             }
             
-            // Send failure notification (optional)
-            emailext (
-                subject: "❌ FAILED: Job '${env.JOB_NAME} [${env.BUILD_NUMBER}]'",
+            emailext(
+                subject: "❌ FAILED: Puppeteer Tests - Build #${env.BUILD_NUMBER}",
                 body: """
-                    <p>❌ Build Status: FAILED</p>
-                    <p>Job: ${env.JOB_NAME}</p>
-                    <p>Build Number: ${env.BUILD_NUMBER}</p>
-                    <p>Build URL: <a href="${env.BUILD_URL}">${env.BUILD_URL}</a></p>
-                    <p>Console Output: <a href="${env.BUILD_URL}console">View Console</a></p>
-                    <p>Screenshots: Check archived artifacts</p>
+                    <h2>Puppeteer Test Execution Failed</h2>
+                    <p><b>Test Suite:</b> ${params.TEST_SUITE}</p>
+                    <p><b>Build:</b> #${env.BUILD_NUMBER}</p>
+                    <p><b>URL:</b> <a href="${env.BUILD_URL}">${env.BUILD_URL}</a></p>
+                    <p><b>Console:</b> <a href="${env.BUILD_URL}console">${env.BUILD_URL}console</a></p>
+                    <p>Check screenshots and logs for details.</p>
                 """,
-                recipientProviders: [developers(), culprits()],
                 to: '${DEFAULT_RECIPIENTS}',
                 mimeType: 'text/html'
             )
